@@ -19,6 +19,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * Сервис для управления оценками курсов (CourseRating).
+ * Обеспечивает создание, обновление, получение и удаление оценок пользователей для курсов.
+ * Проверяет права доступа к оценкам.
+ */
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -34,6 +39,7 @@ public class CourseRatingService {
      * @param currentUserId ID пользователя, ставящего оценку.
      * @param createDto DTO с ID курса и оценкой.
      * @return DTO созданной/обновленной оценки.
+     * @throws EntityNotFoundException если пользователь или курс не найдены.
      */
     @Transactional
     public CourseRatingResponseDto rateCourse(Long currentUserId, CourseRatingCreateDto createDto) {
@@ -46,14 +52,19 @@ public class CourseRatingService {
                 .orElseThrow(() -> new EntityNotFoundException("Course not found with id: " + createDto.getCourseId()));
 
         // 3. Проверить, существует ли уже оценка от этого пользователя для этого курса
-        CourseRating existingRating = courseRatingRepository.findByUserIdAndCourseId(currentUserId, createDto.getCourseId())
-                .orElse(null);
+        // Используем метод с JOIN FETCH, если валидация требует
+        CourseRating existingRating = courseRatingRepository.findByUserIdAndCourseIdWithUserAndCourse(currentUserId, createDto.getCourseId()).orElse(null);
 
         if (existingRating != null) {
             // 4. Если оценка существует, обновить её
             existingRating.setRating(createDto.getRating());
             CourseRating updatedRating = courseRatingRepository.save(existingRating);
-            return toDto(updatedRating);
+
+            // Перезапрашиваем обновленный CourseRating с User и Course, чтобы избежать LazyInit в toDto
+            CourseRating updatedWithUserAndCourse = courseRatingRepository.findByIdWithUserAndCourse(updatedRating.getId()) // <-- Добавлено
+                    .orElseThrow(() -> new EntityNotFoundException("Rating not found after update")); // На всякий случай
+
+            return toDto(updatedWithUserAndCourse); // <-- Теперь toDto не вызывает LazyInit
         } else {
             // 5. Если оценки не существует, создать новую
             CourseRating newRating = CourseRating.builder()
@@ -65,8 +76,12 @@ public class CourseRatingService {
             // 6. Сохранить
             CourseRating savedRating = courseRatingRepository.save(newRating);
 
+            // Перезапрашиваем созданный CourseRating с User и Course, чтобы избежать LazyInit в toDto
+            CourseRating savedWithUserAndCourse = courseRatingRepository.findByIdWithUserAndCourse(savedRating.getId()) // <-- Добавлено
+                    .orElseThrow(() -> new EntityNotFoundException("Rating not found after creation")); // На всякий случай
+
             // 7. Вернуть DTO
-            return toDto(savedRating);
+            return toDto(savedWithUserAndCourse); // <-- Теперь toDto не вызывает LazyInit
         }
     }
 
@@ -77,10 +92,13 @@ public class CourseRatingService {
      * @param courseRatingId ID самой оценки.
      * @param updateDto DTO с новой оценкой.
      * @return DTO обновленной оценки.
+     * @throws EntityNotFoundException если оценка не найдена.
+     * @throws ForbiddenException      если доступ запрещен (не владелец оценки).
      */
     @Transactional
     public CourseRatingResponseDto updateRating(Long currentUserId, Long courseRatingId, CourseRatingUpdateDto updateDto) {
-        CourseRating rating = courseRatingRepository.findById(courseRatingId)
+        // Используем метод с JOIN FETCH
+        CourseRating rating = courseRatingRepository.findByIdWithUserAndCourse(courseRatingId)
                 .orElseThrow(() -> new EntityNotFoundException("Rating not found with id: " + courseRatingId));
 
         // Проверить, что текущий пользователь является владельцем оценки
@@ -94,8 +112,12 @@ public class CourseRatingService {
         // Сохранить
         CourseRating updatedRating = courseRatingRepository.save(rating);
 
+        // Перезапрашиваем обновленный CourseRating с User и Course, чтобы избежать LazyInit в toDto
+        CourseRating updatedWithUserAndCourse = courseRatingRepository.findByIdWithUserAndCourse(updatedRating.getId()) // <-- Добавлено
+                .orElseThrow(() -> new EntityNotFoundException("Rating not found after update")); // На всякий случай
+
         // Вернуть DTO
-        return toDto(updatedRating);
+        return toDto(updatedWithUserAndCourse); // <-- Теперь toDto не вызывает LazyInit
     }
 
     /**
@@ -103,10 +125,12 @@ public class CourseRatingService {
      *
      * @param currentUserId ID пользователя, удаляющего оценку.
      * @param courseRatingId ID самой оценки.
+     * @throws EntityNotFoundException если оценка не найдена.
+     * @throws ForbiddenException      если доступ запрещен (не владелец оценки).
      */
     @Transactional
     public void deleteRating(Long currentUserId, Long courseRatingId) {
-        CourseRating rating = courseRatingRepository.findById(courseRatingId)
+        CourseRating rating = courseRatingRepository.findByIdWithUserAndCourse(courseRatingId) // <-- Изменено: используем JOIN FETCH для валидации
                 .orElseThrow(() -> new EntityNotFoundException("Rating not found with id: " + courseRatingId));
 
         // Проверить, что текущий пользователь является владельцем оценки
@@ -114,7 +138,7 @@ public class CourseRatingService {
             throw new ForbiddenException("Access denied: Cannot delete another user's rating.");
         }
 
-        // Удалить (жесткое или мягкое - см. комментарий в EnrollmentService)
+        // Удалить
         courseRatingRepository.delete(rating);
     }
 
@@ -124,15 +148,18 @@ public class CourseRatingService {
      * @param currentUserId ID пользователя, запрашивающего оценку.
      * @param courseRatingId ID оценки.
      * @return DTO оценки.
+     * @throws EntityNotFoundException если оценка не найдена.
+     * @throws ForbiddenException      если доступ запрещен.
      */
     public CourseRatingResponseDto getRatingById(Long currentUserId, Long courseRatingId) {
-        CourseRating rating = courseRatingRepository.findById(courseRatingId)
+        // Используем метод с JOIN FETCH
+        CourseRating rating = courseRatingRepository.findByIdWithUserAndCourse(courseRatingId)
                 .orElseThrow(() -> new EntityNotFoundException("Rating not found with id: " + courseRatingId));
 
         // Проверить права доступа: текущий пользователь == владелец оценки ИЛИ преподаватель/админ
         validateAccessToRating(currentUserId, rating.getUser().getId());
 
-        return toDto(rating);
+        return toDto(rating); // <-- Теперь toDto не вызывает LazyInit
     }
 
     /**
@@ -141,19 +168,22 @@ public class CourseRatingService {
      * @param currentUserId ID пользователя, запрашивающего свою оценку.
      * @param courseId      ID курса.
      * @return DTO оценки.
+     * @throws EntityNotFoundException если пользователь или оценка не найдены.
+     * @throws ForbiddenException      если доступ запрещен.
      */
     public CourseRatingResponseDto getRatingByUserAndCourseId(Long currentUserId, Long courseId) {
         // Проверить, существует ли пользователь (аутентификация)
         userRepository.findById(currentUserId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
 
-        CourseRating rating = courseRatingRepository.findByUserIdAndCourseId(currentUserId, courseId)
+        // Используем метод с JOIN FETCH
+        CourseRating rating = courseRatingRepository.findByUserIdAndCourseIdWithUserAndCourse(currentUserId, courseId)
                 .orElseThrow(() -> new EntityNotFoundException("Rating not found for user id: " + currentUserId + " and course id: " + courseId));
 
         // Проверить права доступа: текущий пользователь == владелец оценки ИЛИ преподаватель/админ
         validateAccessToRating(currentUserId, rating.getUser().getId());
 
-        return toDto(rating);
+        return toDto(rating); // <-- Теперь toDto не вызывает LazyInit
     }
 
     /**
@@ -161,14 +191,16 @@ public class CourseRatingService {
      *
      * @param currentUserId ID пользователя, запрашивающего список.
      * @return Список DTO оценок.
+     * @throws ForbiddenException если доступ запрещен.
      */
     public List<CourseRatingResponseDto> getRatingsByUserId(Long currentUserId) {
         // Проверить права: currentUserId == запрашиваемый пользователь ИЛИ преподаватель/админ
         validateAccessToList(currentUserId);
 
-        List<CourseRating> ratings = courseRatingRepository.findByUserId(currentUserId);
+        // Используем метод с JOIN FETCH
+        List<CourseRating> ratings = courseRatingRepository.findByUserIdWithUserAndCourse(currentUserId);
         return ratings.stream()
-                .map(this::toDto)
+                .map(this::toDto) // <-- Теперь toDto не вызывает LazyInit для каждого элемента
                 .collect(Collectors.toList());
     }
 
@@ -179,25 +211,37 @@ public class CourseRatingService {
      * @param currentUserId ID пользователя, запрашивающего список.
      * @param courseId      ID курса.
      * @return Список DTO оценок.
+     * @throws ForbiddenException если доступ запрещен.
      */
     public List<CourseRatingResponseDto> getRatingsByCourseId(Long currentUserId, Long courseId) {
         // Проверить права: currentUserId должен быть преподавателем/админом/владельцем курса
         validateUserCanViewRatings(currentUserId, courseId);
 
-        List<CourseRating> ratings = courseRatingRepository.findByCourseId(courseId);
+        // Используем метод с JOIN FETCH
+        List<CourseRating> ratings = courseRatingRepository.findByCourseIdWithUserAndCourse(courseId);
         return ratings.stream()
-                .map(this::toDto)
+                .map(this::toDto) // <-- Теперь toDto не вызывает LazyInit для каждого элемента
                 .collect(Collectors.toList());
     }
 
     // --- Вспомогательные методы ---
 
+    /**
+     * Преобразует сущность CourseRating в CourseRatingResponseDto.
+     * Включает ID, ID пользователя, ID курса, оценку и даты создания/обновления.
+     *
+     * @param rating Сущность оценки для преобразования.
+     * @return DTO оценки.
+     */
     private CourseRatingResponseDto toDto(CourseRating rating) {
         CourseRatingResponseDto dto = new CourseRatingResponseDto();
         dto.setId(rating.getId());
+        // Убедитесь, что rating.getUser() и rating.getCourse() загружены (JOIN FETCH в репозитории)
         dto.setUserId(rating.getUser().getId());
         dto.setCourseId(rating.getCourse().getId());
         dto.setRating(rating.getRating());
+        dto.setCreatedAt(rating.getCreatedAt());
+        dto.setUpdatedAt(rating.getUpdatedAt());
         return dto;
     }
 
@@ -207,6 +251,8 @@ public class CourseRatingService {
      *
      * @param requestUserId ID пользователя, делающего запрос.
      * @param ownerUserId   ID владельца оценки.
+     * @throws EntityNotFoundException если пользователь не найден.
+     * @throws ForbiddenException      если доступ запрещен.
      */
     private void validateAccessToRating(Long requestUserId, Long ownerUserId) {
         User requestingUser = userRepository.findById(requestUserId)
@@ -218,7 +264,7 @@ public class CourseRatingService {
         }
 
         // Или пользователь должен быть преподавателем/админом/владельцем
-        if (requestingUser.getRole() != Role.OWNER && // Убедитесь, что Role существует
+        if (requestingUser.getRole() != Role.OWNER &&
                 requestingUser.getRole() != Role.ADMIN &&
                 requestingUser.getRole() != Role.TEACHER) {
             throw new ForbiddenException("Access denied: Cannot view another user's rating.");
@@ -230,13 +276,12 @@ public class CourseRatingService {
      * Вызывает ForbiddenException, если прав недостаточно.
      *
      * @param requestUserId ID пользователя, делающего запрос.
+     * @throws EntityNotFoundException если пользователь не найден.
      */
     private void validateAccessToList(Long requestUserId) {
         // Пользователь может просматривать только свой список
-        // Другие роли (преподаватель/админ) проверяются в других методах
         userRepository.findById(requestUserId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
-        // Дальнейшие проверки происходят в вызывающих методах (getRatingsByUserId vs getRatingsByCourseId)
     }
 
     /**
@@ -245,6 +290,8 @@ public class CourseRatingService {
      *
      * @param userId   ID пользователя.
      * @param courseId ID курса.
+     * @throws EntityNotFoundException если пользователь не найден.
+     * @throws ForbiddenException      если доступ запрещен.
      */
     private void validateUserCanViewRatings(Long userId, Long courseId) {
         // Получить курс и связанный с ним пользователь

@@ -61,6 +61,8 @@ public class User extends Auditable {
     )
     private Set<Achievement> achievements = new HashSet<>();
 
+    private boolean verified = false;
+
     @OneToMany(mappedBy = "user")
     private List<CourseRating> courseRatings = new ArrayList<>();
 

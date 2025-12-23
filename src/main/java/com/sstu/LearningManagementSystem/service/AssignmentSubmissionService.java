@@ -18,6 +18,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * Сервис для управления сабмитами заданий (AssignmentSubmission).
+ * Обеспечивает создание, обновление, получение и удаление сабмитов пользователей на задания.
+ * Проверяет права доступа к сабмитам.
+ */
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -34,6 +39,7 @@ public class AssignmentSubmissionService {
      * @param currentUserId ID пользователя, отправляющего ответ.
      * @param createDto DTO с информацией о задании и ответе.
      * @return DTO созданного/обновленного Submission.
+     * @throws EntityNotFoundException если пользователь или задание не найдены.
      */
     @Transactional
     public AssignmentSubmissionResponseDto submitAnswer(Long currentUserId, AssignmentSubmissionCreateDto createDto) {
@@ -46,8 +52,9 @@ public class AssignmentSubmissionService {
                 .orElseThrow(() -> new EntityNotFoundException("Assignment not found with id: " + createDto.getAssignmentId()));
 
         // 3. Найти существующий Submission для этого пользователя и задания
+        // Используем метод с JOIN FETCH, если валидация требует
         AssignmentSubmission submission = assignmentSubmissionRepository
-                .findByAssignmentIdAndUserId(createDto.getAssignmentId(), currentUserId)
+                .findByAssignmentIdAndUserIdWithUserAndAssignment(createDto.getAssignmentId(), currentUserId) // <-- Изменено
                 .orElse(null);
 
         boolean isNewSubmission = (submission == null);
@@ -68,19 +75,15 @@ public class AssignmentSubmissionService {
             // Не меняем passed, successfulAttempt, пока не проверим
         }
 
-        // 6. Проверить ответ (это может быть сложная логика, зависит от типа задания)
-        // Пример простой проверки (например, для задания с фиксированным ответом)
-        // boolean isCorrect = checkAnswer(assignment, createDto.getAnswer());
-        // if (isCorrect && !submission.isPassed()) { // Если еще не сдано успешно
-        //     submission.setPassed(true);
-        //     submission.setSuccessfulAttempt(submission.getAttempts());
-        // }
-
-        // 7. Сохранить Submission
+        // 6. Сохранить Submission
         AssignmentSubmission savedSubmission = assignmentSubmissionRepository.save(submission);
 
+        // 7. Перезапрашиваем созданный/обновленный AssignmentSubmission с User и Assignment, чтобы избежать LazyInit в toDto
+        AssignmentSubmission savedWithUserAndAssignment = assignmentSubmissionRepository.findByIdWithUserAndAssignment(savedSubmission.getId()) // <-- Добавлено
+                .orElseThrow(() -> new EntityNotFoundException("Submission not found after creation/update")); // На всякий случай
+
         // 8. Вернуть DTO
-        return toDto(savedSubmission);
+        return toDto(savedWithUserAndAssignment); // <-- Теперь toDto не вызывает LazyInit
     }
 
     /**
@@ -90,15 +93,18 @@ public class AssignmentSubmissionService {
      * @param currentUserId ID пользователя, запрашивающего сабмит.
      * @param submissionId  ID сабмита.
      * @return DTO сабмита.
+     * @throws EntityNotFoundException если сабмит не найден.
+     * @throws ForbiddenException      если доступ запрещен.
      */
     public AssignmentSubmissionResponseDto getSubmissionById(Long currentUserId, Long submissionId) {
-        AssignmentSubmission submission = assignmentSubmissionRepository.findById(submissionId)
+        // Используем метод с JOIN FETCH
+        AssignmentSubmission submission = assignmentSubmissionRepository.findByIdWithUserAndAssignment(submissionId) // <-- Изменено
                 .orElseThrow(() -> new EntityNotFoundException("Submission not found with id: " + submissionId));
 
         // Проверить права доступа: текущий пользователь == владелец сабмита ИЛИ преподаватель/админ
-        // validateAccessToSubmission(currentUserId, submission.getUser().getId());
+        validateAccessToSubmission(currentUserId, submission.getUser().getId()); // <-- Добавлена проверка прав
 
-        return toDto(submission);
+        return toDto(submission); // <-- Теперь toDto не вызывает LazyInit
     }
 
     /**
@@ -108,15 +114,16 @@ public class AssignmentSubmissionService {
      * @param currentUserId ID пользователя, запрашивающего сабмиты.
      * @param assignmentId  ID задания.
      * @return Список DTO сабмитов.
+     * @throws ForbiddenException если доступ запрещен.
      */
     public List<AssignmentSubmissionResponseDto> getSubmissionsByUserAndAssignmentId(Long currentUserId, Long assignmentId) {
         // Проверить права: currentUserId == запрашиваемый пользователь ИЛИ преподаватель/админ
-        // validateAccessToList(currentUserId);
+        validateAccessToList(currentUserId); // <-- Добавлена проверка прав
 
-        // Используем метод, который возвращает List
-        List<AssignmentSubmission> submissions = assignmentSubmissionRepository.findByAssignmentIdAndUserIdOrderByCreatedAtAsc(assignmentId, currentUserId);
+        // Используем метод с JOIN FETCH
+        List<AssignmentSubmission> submissions = assignmentSubmissionRepository.findByAssignmentIdAndUserIdWithUserAndAssignmentOrderByCreatedAtAsc(assignmentId, currentUserId); // <-- Изменено
         return submissions.stream()
-                .map(this::toDto)
+                .map(this::toDto) // <-- Теперь toDto не вызывает LazyInit для каждого элемента
                 .collect(Collectors.toList());
     }
 
@@ -127,28 +134,79 @@ public class AssignmentSubmissionService {
      * @param currentUserId ID пользователя, запрашивающего сабмиты.
      * @param assignmentId  ID задания.
      * @return Список DTO сабмитов.
+     * @throws ForbiddenException если доступ запрещен.
      */
     public List<AssignmentSubmissionResponseDto> getSubmissionsByAssignmentId(Long currentUserId, Long assignmentId) {
         // Проверить права: currentUserId должен быть преподавателем/админом/владельцем курса
         validateUserCanViewSubmissions(currentUserId, assignmentId);
 
-        List<AssignmentSubmission> submissions = assignmentSubmissionRepository.findByAssignmentId(assignmentId);
+        // Используем метод с JOIN FETCH
+        List<AssignmentSubmission> submissions = assignmentSubmissionRepository.findByAssignmentIdWithUserAndAssignment(assignmentId); // <-- Изменено
         return submissions.stream()
-                .map(this::toDto)
+                .map(this::toDto) // <-- Теперь toDto не вызывает LazyInit для каждого элемента
                 .collect(Collectors.toList());
     }
 
     // --- Вспомогательные методы ---
 
+    /**
+     * Преобразует сущность AssignmentSubmission в AssignmentSubmissionResponseDto.
+     * Включает ID, ID пользователя, ID задания, количество попыток, успешна ли попытка, ответ и дату создания.
+     *
+     * @param submission Сущность сабмита для преобразования.
+     * @return DTO сабмита.
+     */
     private AssignmentSubmissionResponseDto toDto(AssignmentSubmission submission) {
         AssignmentSubmissionResponseDto dto = new AssignmentSubmissionResponseDto();
         dto.setId(submission.getId());
+        // Убедитесь, что submission.getUser() и submission.getAssignment() загружены (JOIN FETCH в репозитории)
         dto.setUserId(submission.getUser().getId());
         dto.setAssignmentId(submission.getAssignment().getId());
         dto.setAttempts(submission.getAttempts());
         dto.setSuccessfulAttempt(submission.getSuccessfulAttempt());
         dto.setAnswer(submission.getAnswer());
+        // dto.setAssignmentId(submission.getAssignment().getId()); // <-- Дублирующийся вызов, удалите эту строку
+        dto.setCreatedAt(submission.getCreatedAt());
         return dto;
+    }
+
+    /**
+     * Проверяет, имеет ли пользователь право просматривать конкретный сабмит.
+     * Вызывает ForbiddenException, если прав недостаточно.
+     *
+     * @param requestUserId ID пользователя, делающего запрос.
+     * @param ownerUserId   ID владельца сабмита.
+     * @throws EntityNotFoundException если пользователь не найден.
+     * @throws ForbiddenException      если доступ запрещен.
+     */
+    private void validateAccessToSubmission(Long requestUserId, Long ownerUserId) {
+        User requestingUser = userRepository.findById(requestUserId)
+                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+
+        // Пользователь может просматривать свои данные
+        if (requestUserId.equals(ownerUserId)) {
+            return;
+        }
+
+        // Или пользователь должен быть преподавателем/админом/владельцем
+        if (requestingUser.getRole() != Role.OWNER &&
+                requestingUser.getRole() != Role.ADMIN &&
+                requestingUser.getRole() != Role.TEACHER) {
+            throw new ForbiddenException("Access denied: Cannot view another user's submission.");
+        }
+    }
+
+    /**
+     * Проверяет, имеет ли пользователь право просматривать список сабмитов.
+     * Вызывает ForbiddenException, если прав недостаточно.
+     *
+     * @param requestUserId ID пользователя, делающего запрос.
+     * @throws EntityNotFoundException если пользователь не найден.
+     */
+    private void validateAccessToList(Long requestUserId) {
+        // Пользователь может просматривать только свой список
+        userRepository.findById(requestUserId)
+                .orElseThrow(() -> new EntityNotFoundException("User not found"));
     }
 
     /**
@@ -157,6 +215,8 @@ public class AssignmentSubmissionService {
      *
      * @param userId         ID пользователя.
      * @param assignmentId   ID задания.
+     * @throws EntityNotFoundException если пользователь или задание не найдены.
+     * @throws ForbiddenException      если доступ запрещен.
      */
     private void validateUserCanViewSubmissions(Long userId, Long assignmentId) {
         // Получить задание и связанный с ним курс
@@ -172,6 +232,5 @@ public class AssignmentSubmissionService {
                 user.getRole() != Role.TEACHER) {
             throw new ForbiddenException("Only OWNER, ADMIN, or TEACHER can view submissions for an assignment");
         }
-        // Можно добавить дополнительную проверку: принадлежит ли задание курсу, где пользователь является преподавателем
     }
 }

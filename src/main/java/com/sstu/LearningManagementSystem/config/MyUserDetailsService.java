@@ -3,7 +3,6 @@ package com.sstu.LearningManagementSystem.config;
 import com.sstu.LearningManagementSystem.model.User;
 import com.sstu.LearningManagementSystem.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -11,30 +10,39 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
 import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
 
+/**
+ * Реализация Spring Security интерфейса UserDetailsService.
+ * Загружает данные пользователя по имени пользователя для аутентификации.
+ * Проверяет статус верификации email перед предоставлением доступа.
+ */
 @Service
-@RequiredArgsConstructor
+@RequiredArgsConstructor // Убедитесь, что Lombok генерирует конструктор
 public class MyUserDetailsService implements UserDetailsService {
 
-    private final UserRepository userRepository;
+    private final UserRepository userRepository; // Должно быть final
 
     @Override
+    /**
+     * Загружает UserDetails по имени пользователя.
+     * Проверяет, подтвержден ли email пользователя. Если нет, выбрасывает исключение.
+     *
+     * @param username Имя пользователя для поиска.
+     * @return UserDetails, если пользователь найден и верифицирован.
+     * @throws UsernameNotFoundException если пользователь не найден или email не подтвержден.
+     */
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        Optional<User> user = userRepository.findByUsername(username); // Или findByEmail, если логин = email
-        if (user.isEmpty()) {
-            throw new UsernameNotFoundException("User not found");
-        }
-        User u = user.get();
+        User u = userRepository.findByUsername(username)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
 
-        // Добавляем роль как authority
-        List<GrantedAuthority> authorities = Collections.singletonList(
-                new SimpleGrantedAuthority("ROLE_" + u.getRole().name())
-        );
+        if (!u.isVerified()) { // <-- Эта проверка должна быть
+            throw new UsernameNotFoundException("Email not verified");
+        }
 
         return new org.springframework.security.core.userdetails.User(
-                u.getUsername(), u.getPassword(), authorities
+                u.getUsername(),
+                u.getPassword(), // <-- Тут вызывается getPassword()
+                Collections.singleton(new SimpleGrantedAuthority("ROLE_" + u.getRole().name()))
         );
     }
 }

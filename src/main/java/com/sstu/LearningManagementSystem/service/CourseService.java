@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 //import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 
 @Service
@@ -59,16 +60,28 @@ public class CourseService {
         userRepository.findById(currentUserId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
 
-        Course course = courseRepository.findById(courseId)
+        // Используем метод с JOIN FETCH
+        Course course = courseRepository.findByIdWithCategoryAndTags(courseId)
                 .orElseThrow(() -> new EntityNotFoundException("Course not found"));
 
-        return toDto(course);
+        return toDto(course); // Теперь toDto не вызывает LazyInit
     }
 
-    public CourseResponseDto updateCourse(Long id, Long aLong, CourseUpdateDto updateDto) {
-        Course course = courseRepository.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("Course not found with id: " + id));
+    public CourseResponseDto updateCourse(Long currentUserId, Long courseId, CourseUpdateDto updateDto) {
+        // Проверка прав текущего пользователя (аналогично createCourse)
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new EntityNotFoundException("User not found"));
 
+        if (currentUser.getRole() != Role.OWNER &&
+                currentUser.getRole() != Role.ADMIN &&
+                currentUser.getRole() != Role.TEACHER) {
+            throw new RuntimeException("Only OWNER, ADMIN or TEACHER can update courses");
+        }
+
+        Course course = courseRepository.findById(courseId) // Теперь используем courseId
+                .orElseThrow(() -> new EntityNotFoundException("Course not found with id: " + courseId));
+
+        // Обновление полей (осталось как есть)
         if (updateDto.getName() != null) course.setName(updateDto.getName());
         if (updateDto.getDescription() != null) course.setDescription(updateDto.getDescription());
         if (updateDto.getExpectedDuration() != null) course.setExpectedDuration(updateDto.getExpectedDuration());
@@ -79,8 +92,14 @@ public class CourseService {
         }
         if (updateDto.getTags() != null) course.setTags(updateDto.getTags());
 
-        Course updatedCourse = courseRepository.save(course);
-        return mapToResponseDto(updatedCourse);
+        courseRepository.save(course);
+
+        Course updatedCourse = courseRepository.findByIdWithCategoryAndTags(courseId) // <-- Изменено
+                .orElseThrow(() -> new EntityNotFoundException("Course not found after update"));
+
+
+
+        return mapToResponseDto(updatedCourse); // <-- Теперь вызов course.getTags() внутри mapToResponseDto безопасен
     }
 
     private CourseResponseDto toDto(Course course) {
@@ -89,7 +108,14 @@ public class CourseService {
         dto.setName(course.getName());
         dto.setDescription(course.getDescription());
         dto.setExpectedDuration(course.getExpectedDuration());
-        dto.setCategoryId(course.getCategory().getId());
+        dto.setCreatedAt(course.getCreatedAt());
+        dto.setUpdatedAt(course.getUpdatedAt());
+        // Проверяем, есть ли категория, перед тем как получать её ID
+        if (course.getCategory() != null) {
+            dto.setCategoryId(course.getCategory().getId());
+        } else {
+            dto.setCategoryId(null); // Или не устанавливать, если поле в DTO может быть null
+        }
         dto.setTags(course.getTags());
         return dto;
     }
@@ -101,12 +127,20 @@ public class CourseService {
         dto.setDescription(course.getDescription());
         dto.setExpectedDuration(course.getExpectedDuration());
         dto.setRating(course.getRating());
+        dto.setCreatedAt(course.getCreatedAt());
+        dto.setUpdatedAt(course.getUpdatedAt());
+        // Проверяем, есть ли категория, перед тем как получать её ID и Name
         if (course.getCategory() != null) {
             dto.setCategoryId(course.getCategory().getId());
             dto.setCategoryName(course.getCategory().getName());
+        } else {
+            // Устанавливаем null, если категория отсутствует
+            dto.setCategoryId(null); // Или не устанавливать, если поле в DTO может быть null
+            dto.setCategoryName(null); // Или не устанавливать
         }
         dto.setTags(course.getTags());
-
         return dto;
     }
+
+
 }

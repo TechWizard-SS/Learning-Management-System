@@ -48,7 +48,12 @@ public class SocialLinkService {
                 .build();
 
         SocialLink savedSocialLink = socialLinkRepository.save(socialLink);
-        return toDto(savedSocialLink);
+
+        // Перезапрашиваем SocialLink с User, чтобы избежать LazyInit в toDto
+        SocialLink savedWithUser = socialLinkRepository.findByIdWithUser(savedSocialLink.getId())
+                .orElseThrow(() -> new EntityNotFoundException("SocialLink not found after creation")); // На всякий случай
+
+        return toDto(savedWithUser); // <-- Теперь toDto не вызывает LazyInit
     }
 
     /**
@@ -62,18 +67,24 @@ public class SocialLinkService {
      */
     @Transactional
     public SocialLinkResponseDto updateSocialLink(Long currentUserId, Long linkId, SocialLinkUpdateDto updateDto) {
-        SocialLink socialLink = socialLinkRepository.findById(linkId)
+        // Нужно использовать метод с JOIN FETCH
+        SocialLink socialLink = socialLinkRepository.findByIdWithUser(linkId) // <-- Изменено
                 .orElseThrow(() -> new EntityNotFoundException("SocialLink not found with id: " + linkId));
 
-        // Проверить, что текущий пользователь является владельцем ссылки
+        // Проверка прав (остается та же)
         validateAccessToSocialLink(currentUserId, socialLink.getUser().getId());
 
-        // Частичное обновление: обновляем только ненулевые поля из DTO
+        // Обновление (остается то же)
         if (updateDto.getPlatform() != null) socialLink.setPlatform(updateDto.getPlatform());
         if (updateDto.getUrl() != null) socialLink.setUrl(updateDto.getUrl());
 
         SocialLink updatedSocialLink = socialLinkRepository.save(socialLink);
-        return toDto(updatedSocialLink);
+
+        // Перезапрашиваем обновленный SocialLink с User, чтобы избежать LazyInit в toDto
+        SocialLink updatedWithUser = socialLinkRepository.findByIdWithUser(updatedSocialLink.getId()) // <-- Добавлено
+                .orElseThrow(() -> new EntityNotFoundException("SocialLink not found after update")); // На всякий случай
+
+        return toDto(updatedWithUser); // <-- Теперь toDto не вызывает LazyInit
     }
 
     /**
@@ -85,15 +96,13 @@ public class SocialLinkService {
      */
     @Transactional
     public void deleteSocialLink(Long currentUserId, Long linkId) {
-        SocialLink socialLink = socialLinkRepository.findById(linkId)
+        // Нужно использовать метод с JOIN FETCH, если toDto вызывается где-то после или до
+        // Но если просто удаляем - можно и без JOIN FETCH, если не возвращаем DTO
+        SocialLink socialLink = socialLinkRepository.findByIdWithUser(linkId) // <-- Изменено, если логика требует
                 .orElseThrow(() -> new EntityNotFoundException("SocialLink not found with id: " + linkId));
 
-        // Проверить, что текущий пользователь является владельцем ссылки
         validateAccessToSocialLink(currentUserId, socialLink.getUser().getId());
 
-        // Если используется мягкое удаление (soft-delete) через Auditable,
-        // вместо repository.delete() установите deletedAt и сохраните.
-        // Иначе, выполняем жесткое удаление:
         socialLinkRepository.deleteById(linkId);
     }
 
@@ -106,13 +115,14 @@ public class SocialLinkService {
      * @return DTO запрашиваемой ссылки.
      */
     public SocialLinkResponseDto getSocialLinkById(Long currentUserId, Long linkId) {
-        SocialLink socialLink = socialLinkRepository.findById(linkId)
+        // Используем метод с JOIN FETCH
+        SocialLink socialLink = socialLinkRepository.findByIdWithUser(linkId) // <-- Изменено
                 .orElseThrow(() -> new EntityNotFoundException("SocialLink not found with id: " + linkId));
 
         // Проверить права доступа: текущий пользователь == владелец ссылки ИЛИ преподаватель/админ
         validateAccessToSocialLink(currentUserId, socialLink.getUser().getId());
 
-        return toDto(socialLink);
+        return toDto(socialLink); // <-- Теперь toDto не вызывает LazyInit
     }
 
     /**
@@ -127,9 +137,9 @@ public class SocialLinkService {
         // Проверить права доступа: текущий пользователь == владелец списка ИЛИ преподаватель/админ
         validateAccessToList(currentUserId, targetUserId);
 
-        List<SocialLink> socialLinks = socialLinkRepository.findByUserId(targetUserId);
+        List<SocialLink> socialLinks = socialLinkRepository.findByUserIdWithUser(targetUserId);
         return socialLinks.stream()
-                .map(this::toDto)
+                .map(this::toDto) // <-- Теперь toDto не вызывает LazyInit для каждого элемента
                 .collect(Collectors.toList());
     }
 
@@ -147,6 +157,8 @@ public class SocialLinkService {
         dto.setPlatform(socialLink.getPlatform());
         dto.setUrl(socialLink.getUrl());
         dto.setUserId(socialLink.getUser().getId());
+        dto.setCreatedAt(socialLink.getCreatedAt());
+        dto.setUpdatedAt(socialLink.getUpdatedAt());
         return dto;
     }
 

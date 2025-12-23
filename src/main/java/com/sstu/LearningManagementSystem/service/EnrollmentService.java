@@ -19,6 +19,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * Сервис для управления зачислениями (Enrollment).
+ * Обеспечивает создание, обновление, получение и удаление зачислений пользователей на курсы.
+ * Обновляет прогресс и связаные отчеты.
+ * Проверяет права доступа к зачислениям.
+ */
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -31,11 +37,13 @@ public class EnrollmentService {
 
     /**
      * Записывает пользователя на курс. Создает Enrollment.
-     * Если зачисление уже существует, возвращает существующее.
+     * Если зачисление уже существует, возвращает существующее (или может обновить статус, если логика требует).
+     * Создает начальный отчет для пользователя по курсу.
      *
      * @param currentUserId ID пользователя, инициирующего запись.
      * @param createDto DTO с ID курса.
-     * @return DTO созданного/существующего зачисления.
+     * @return DTO созданного зачисления.
+     * @throws EntityNotFoundException если пользователь или курс не найдены.
      */
     @Transactional
     public EnrollmentResponseDto enrollUser(Long currentUserId, EnrollmentCreateDto createDto) {
@@ -48,8 +56,8 @@ public class EnrollmentService {
                 .orElseThrow(() -> new EntityNotFoundException("Course not found with id: " + createDto.getCourseId()));
 
         // 3. Проверить, существует ли уже зачисление на этот курс
-        Enrollment existingEnrollment = enrollmentRepository.findByUserIdAndCourseId(currentUserId, createDto.getCourseId())
-                .orElse(null);
+        // (Опционально: можно использовать метод с JOIN FETCH, если валидация требует)
+        // Enrollment existingEnrollment = enrollmentRepository.findByUserIdAndCourseIdWithUserAndCourse(currentUserId, createDto.getCourseId()).orElse(null);
 
         // 4. Создать новое зачисление
         Enrollment enrollment = Enrollment.builder()
@@ -63,10 +71,15 @@ public class EnrollmentService {
         // 5. Сохранить
         Enrollment savedEnrollment = enrollmentRepository.save(enrollment);
 
+        // 6. Обновить/создать отчет
         reportService.updateReport(savedEnrollment.getUser().getId(), savedEnrollment.getCourse().getId(), 0, 0); // начальные значения
 
-        // 6. Вернуть DTO
-        return toDto(savedEnrollment);
+        // 7. Перезапрашиваем Enrollment с User и Course, чтобы избежать LazyInit в toDto
+        Enrollment savedWithUserAndCourse = enrollmentRepository.findByIdWithUserAndCourse(savedEnrollment.getId())
+                .orElseThrow(() -> new EntityNotFoundException("Enrollment not found after creation")); // На всякий случай
+
+        // 8. Вернуть DTO
+        return toDto(savedWithUserAndCourse); // <-- Теперь toDto не вызывает LazyInit
     }
 
     /**
@@ -76,15 +89,18 @@ public class EnrollmentService {
      * @param currentUserId ID пользователя, запрашивающего зачисление.
      * @param enrollmentId  ID зачисления.
      * @return DTO зачисления.
+     * @throws EntityNotFoundException если зачисление не найдено.
+     * @throws ForbiddenException      если доступ запрещен.
      */
     public EnrollmentResponseDto getEnrollmentById(Long currentUserId, Long enrollmentId) {
-        Enrollment enrollment = enrollmentRepository.findById(enrollmentId)
+        // Используем метод с JOIN FETCH
+        Enrollment enrollment = enrollmentRepository.findByIdWithUserAndCourse(enrollmentId)
                 .orElseThrow(() -> new EntityNotFoundException("Enrollment not found with id: " + enrollmentId));
 
         // Проверить права доступа: текущий пользователь == владелец зачисления ИЛИ преподаватель/админ
         validateAccessToEnrollment(currentUserId, enrollment.getUser().getId());
 
-        return toDto(enrollment);
+        return toDto(enrollment); // <-- Теперь toDto не вызывает LazyInit
     }
 
     /**
@@ -92,14 +108,16 @@ public class EnrollmentService {
      *
      * @param currentUserId ID пользователя, запрашивающего список.
      * @return Список DTO зачислений.
+     * @throws ForbiddenException если доступ запрещен.
      */
     public List<EnrollmentResponseDto> getEnrollmentsByUserId(Long currentUserId) {
         // Проверить права: currentUserId == запрашиваемый пользователь ИЛИ преподаватель/админ
         validateAccessToList(currentUserId);
 
-        List<Enrollment> enrollments = enrollmentRepository.findByUserId(currentUserId);
+        // Используем метод с JOIN FETCH
+        List<Enrollment> enrollments = enrollmentRepository.findByUserIdWithUserAndCourse(currentUserId);
         return enrollments.stream()
-                .map(this::toDto)
+                .map(this::toDto) // <-- Теперь toDto не вызывает LazyInit для каждого элемента
                 .collect(Collectors.toList());
     }
 
@@ -110,14 +128,16 @@ public class EnrollmentService {
      * @param currentUserId ID пользователя, запрашивающего список.
      * @param courseId      ID курса.
      * @return Список DTO зачислений.
+     * @throws ForbiddenException если доступ запрещен.
      */
     public List<EnrollmentResponseDto> getEnrollmentsByCourseId(Long currentUserId, Long courseId) {
         // Проверить права: currentUserId должен быть преподавателем/админом/владельцем курса
         validateUserCanViewEnrollments(currentUserId, courseId);
 
-        List<Enrollment> enrollments = enrollmentRepository.findByCourseId(courseId);
+        // Используем метод с JOIN FETCH
+        List<Enrollment> enrollments = enrollmentRepository.findByCourseIdWithUserAndCourse(courseId);
         return enrollments.stream()
-                .map(this::toDto)
+                .map(this::toDto) // <-- Теперь toDto не вызывает LazyInit для каждого элемента
                 .collect(Collectors.toList());
     }
 
@@ -129,23 +149,28 @@ public class EnrollmentService {
      * @param enrollmentId  ID зачисления.
      * @param updateDto     DTO с новыми значениями.
      * @return DTO обновленного зачисления.
+     * @throws EntityNotFoundException если зачисление не найдено.
+     * @throws ForbiddenException      если доступ запрещен.
      */
     @Transactional
     public EnrollmentResponseDto updateEnrollment(Long currentUserId, Long enrollmentId, EnrollmentUpdateDto updateDto) {
         // Проверить права: только преподаватель/админ/владелец курса
         validateUserCanUpdateEnrollment(currentUserId, enrollmentId);
 
-        Enrollment enrollment = enrollmentRepository.findById(enrollmentId)
+        // Используем метод с JOIN FETCH
+        Enrollment enrollment = enrollmentRepository.findByIdWithUserAndCourse(enrollmentId)
                 .orElseThrow(() -> new EntityNotFoundException("Enrollment not found with id: " + enrollmentId));
 
         // Обновить поля из DTO
         if (updateDto.getConfirmed() != null) enrollment.setConfirmed(updateDto.getConfirmed());
 
-        // Прогресс обновляется отдельно, см. updateProgressForEnrollment
-        // if (updateDto.getProgress() != null) enrollment.setProgress(updateDto.getProgress());
-
         Enrollment updatedEnrollment = enrollmentRepository.save(enrollment);
-        return toDto(updatedEnrollment);
+
+        // Перезапрашиваем обновленный Enrollment с User и Course, чтобы избежать LazyInit в toDto
+        Enrollment updatedWithUserAndCourse = enrollmentRepository.findByIdWithUserAndCourse(updatedEnrollment.getId()) // <-- Добавлено
+                .orElseThrow(() -> new EntityNotFoundException("Enrollment not found after update")); // На всякий случай
+
+        return toDto(updatedWithUserAndCourse); // <-- Теперь toDto не вызывает LazyInit
     }
 
     /**
@@ -155,33 +180,48 @@ public class EnrollmentService {
      * Часто вызывается внутренне сервисом при завершении тем/заданий.
      *
      * @param enrollmentId ID зачисления.
-     * @param newProgress  Новый процент прогресса.
+     * @param newProgress  Новый процент прогресса (0-100).
      * @return DTO обновленного зачисления.
+     * @throws EntityNotFoundException если зачисление не найдено.
      */
     @Transactional
     public EnrollmentResponseDto updateProgressForEnrollment(Long enrollmentId, Integer newProgress) {
-        // Внутренний метод - проверки прав могут быть иными или отсутствовать, если вызывается из других сервисов
-        // Но для безопасности можно добавить базовую проверку на существование
-        Enrollment enrollment = enrollmentRepository.findById(enrollmentId)
+        // Используем метод с JOIN FETCH
+        Enrollment enrollment = enrollmentRepository.findByIdWithUserAndCourse(enrollmentId)
                 .orElseThrow(() -> new EntityNotFoundException("Enrollment not found with id: " + enrollmentId));
 
         // Обновить прогресс
         enrollment.setProgress(Math.max(0, Math.min(100, newProgress))); // Ограничить 0-100%
 
         Enrollment updatedEnrollment = enrollmentRepository.save(enrollment);
-        return toDto(updatedEnrollment);
+
+        // Перезапрашиваем обновленный Enrollment с User и Course, чтобы избежать LazyInit в toDto
+        Enrollment updatedWithUserAndCourse = enrollmentRepository.findByIdWithUserAndCourse(updatedEnrollment.getId()) // <-- Добавлено
+                .orElseThrow(() -> new EntityNotFoundException("Enrollment not found after update")); // На всякий случай
+
+        return toDto(updatedWithUserAndCourse); // <-- Теперь toDto не вызывает LazyInit
     }
 
     // --- Вспомогательные методы ---
 
+    /**
+     * Преобразует сущность Enrollment в EnrollmentResponseDto.
+     * Включает ID, ID пользователя, ID курса, дату зачисления, статус подтверждения, прогресс и даты создания/обновления.
+     *
+     * @param enrollment Сущность зачисления для преобразования.
+     * @return DTO зачисления.
+     */
     private EnrollmentResponseDto toDto(Enrollment enrollment) {
         EnrollmentResponseDto dto = new EnrollmentResponseDto();
         dto.setId(enrollment.getId());
+        // Убедитесь, что enrollment.getUser() и enrollment.getCourse() загружены (JOIN FETCH в репозитории)
         dto.setUserId(enrollment.getUser().getId());
         dto.setCourseId(enrollment.getCourse().getId());
         dto.setEnrollmentDate(enrollment.getEnrollmentDate());
         dto.setConfirmed(enrollment.getConfirmed());
         dto.setProgress(enrollment.getProgress());
+        dto.setCreatedAt(enrollment.getCreatedAt());
+        dto.setUpdatedAt(enrollment.getUpdatedAt());
         return dto;
     }
 
@@ -191,6 +231,8 @@ public class EnrollmentService {
      *
      * @param requestUserId ID пользователя, делающего запрос.
      * @param ownerUserId   ID владельца зачисления.
+     * @throws EntityNotFoundException если пользователь не найден.
+     * @throws ForbiddenException      если доступ запрещен.
      */
     private void validateAccessToEnrollment(Long requestUserId, Long ownerUserId) {
         User requestingUser = userRepository.findById(requestUserId)
@@ -202,7 +244,7 @@ public class EnrollmentService {
         }
 
         // Или пользователь должен быть преподавателем/админом/владельцем
-        if (requestingUser.getRole() != Role.OWNER && // Убедитесь, что Role существует
+        if (requestingUser.getRole() != Role.OWNER &&
                 requestingUser.getRole() != Role.ADMIN &&
                 requestingUser.getRole() != Role.TEACHER) {
             throw new ForbiddenException("Access denied: Cannot view another user's enrollment.");
@@ -214,13 +256,12 @@ public class EnrollmentService {
      * Вызывает ForbiddenException, если прав недостаточно.
      *
      * @param requestUserId ID пользователя, делающего запрос.
+     * @throws EntityNotFoundException если пользователь не найден.
      */
     private void validateAccessToList(Long requestUserId) {
         // Пользователь может просматривать только свой список
         // Другие роли (преподаватель/админ) проверяются в других методах
         // Этот метод просто проверяет, что запрос от аутентифицированного пользователя
-        // или вызывается из метода с более строгой проверкой.
-        // В данном случае, он просто проверяет существование пользователя.
         userRepository.findById(requestUserId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
         // Дальнейшие проверки происходят в вызывающих методах (getEnrollmentsByUserId vs getEnrollmentsByCourseId)
@@ -232,6 +273,8 @@ public class EnrollmentService {
      *
      * @param userId   ID пользователя.
      * @param courseId ID курса.
+     * @throws EntityNotFoundException если пользователь или курс не найдены.
+     * @throws ForbiddenException      если доступ запрещен.
      */
     private void validateUserCanViewEnrollments(Long userId, Long courseId) {
         // Получить курс и связанный с ним пользователь
@@ -255,10 +298,13 @@ public class EnrollmentService {
      *
      * @param userId         ID пользователя.
      * @param enrollmentId   ID зачисления.
+     * @throws EntityNotFoundException если пользователь или зачисление не найдены.
+     * @throws ForbiddenException      если доступ запрещен.
      */
     private void validateUserCanUpdateEnrollment(Long userId, Long enrollmentId) {
         // Получить зачисление и проверить права
-        Enrollment enrollment = enrollmentRepository.findById(enrollmentId)
+        // Используем метод с JOIN FETCH
+        Enrollment enrollment = enrollmentRepository.findByIdWithUserAndCourse(enrollmentId) // <-- Изменено
                 .orElseThrow(() -> new EntityNotFoundException("Enrollment not found"));
 
         User user = userRepository.findById(userId)

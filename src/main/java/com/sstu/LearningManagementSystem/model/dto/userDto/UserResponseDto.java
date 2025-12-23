@@ -21,4 +21,6 @@ public class UserResponseDto {
     private String avatarUrl;
     private LocalDateTime registrationDate;
     private Integer ratingPosition;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 }

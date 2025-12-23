@@ -21,6 +21,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * Сервис для управления заданиями (Assignment).
+ * Обеспечивает создание, обновление, получение и удаление заданий, связанных с темами.
+ * Проверяет права доступа к заданиям (только преподаватель/админ/владелец могут редактировать).
+ */
 @Service // Указывает Spring, что это компонент бизнес-логики
 @RequiredArgsConstructor // Генерирует конструктор для final полей
 @Transactional(readOnly = true) // Применяется ко всем методам по умолчанию для операций чтения
@@ -38,6 +43,8 @@ public class AssignmentService {
      * @param currentUserId ID пользователя, инициирующего действие.
      * @param createDto     DTO с данными для создания задания.
      * @return DTO созданного задания.
+     * @throws EntityNotFoundException если тема не найдена.
+     * @throws ForbiddenException      если у пользователя недостаточно прав.
      */
     @Transactional // Переопределяет readOnly для методов записи
     public AssignmentResponseDto createAssignment(Long currentUserId, AssignmentCreateDto createDto) {
@@ -50,14 +57,19 @@ public class AssignmentService {
                 .title(createDto.getTitle())
                 .description(createDto.getDescription())
                 .content(createDto.getContent())
-                .type(AssignmentType.valueOf(createDto.getType().toUpperCase())) // Убедитесь, что AssignmentType существует
-                .contentType(ContentType.valueOf(createDto.getContentType().toUpperCase())) // Убедитесь, что ContentType существует
-                .deadline(createDto.getDeadline()) // Если поле deadline добавлено в сущность
+                .type(AssignmentType.valueOf(createDto.getType().toUpperCase()))
+                .contentType(ContentType.valueOf(createDto.getContentType().toUpperCase()))
+                .deadline(createDto.getDeadline())
                 .topic(topic) // Устанавливаем связь с Topic
                 .build();
 
         Assignment savedAssignment = assignmentRepository.save(assignment);
-        return toDto(savedAssignment);
+
+        // Перезапрашиваем Assignment с Topic, чтобы избежать LazyInit в toDto
+        Assignment savedWithTopic = assignmentRepository.findByIdWithTopic(savedAssignment.getId())
+                .orElseThrow(() -> new EntityNotFoundException("Assignment not found after creation")); // На всякий случай
+
+        return toDto(savedWithTopic); // <-- Теперь toDto не вызывает LazyInit
     }
 
     /**
@@ -68,12 +80,16 @@ public class AssignmentService {
      * @param assignmentId  ID задания для обновления.
      * @param updateDto     DTO с новыми данными.
      * @return DTO обновленного задания.
+     * @throws EntityNotFoundException если задание не найдено.
+     * @throws ForbiddenException      если у пользователя недостаточно прав.
+     * @throws IllegalArgumentException если передан неверный тип задания или типа контента.
      */
     @Transactional // Переопределяет readOnly для методов записи
     public AssignmentResponseDto updateAssignment(Long currentUserId, Long assignmentId, AssignmentUpdateDto updateDto) {
         validateUserCanEditAssignments(currentUserId); // Проверка прав
 
-        Assignment assignment = assignmentRepository.findById(assignmentId)
+        // Используем метод с JOIN FETCH
+        Assignment assignment = assignmentRepository.findByIdWithTopic(assignmentId)
                 .orElseThrow(() -> new EntityNotFoundException("Assignment not found with id: " + assignmentId));
 
         // Частичное обновление: обновляем только ненулевые поля из DTO
@@ -97,7 +113,12 @@ public class AssignmentService {
         if (updateDto.getDeadline() != null) assignment.setDeadline(updateDto.getDeadline());
 
         Assignment updatedAssignment = assignmentRepository.save(assignment);
-        return toDto(updatedAssignment);
+
+        // Перезапрашиваем обновленный Assignment с Topic, чтобы избежать LazyInit в toDto
+        Assignment updatedWithTopic = assignmentRepository.findByIdWithTopic(updatedAssignment.getId()) // <-- Добавлено
+                .orElseThrow(() -> new EntityNotFoundException("Assignment not found after update")); // На всякий случай
+
+        return toDto(updatedWithTopic); // <-- Теперь toDto не вызывает LazyInit
     }
 
 
@@ -108,9 +129,6 @@ public class AssignmentService {
         if (!assignmentRepository.existsById(assignmentId)) {
             throw new EntityNotFoundException("Assignment not found with id: " + assignmentId);
         }
-        // Если используется мягкое удаление (soft-delete) через Auditable,
-        // вместо repository.delete() установите deletedAt и сохраните.
-        // Иначе, выполняем жесткое удаление:
         assignmentRepository.deleteById(assignmentId);
     }
 
@@ -121,16 +139,18 @@ public class AssignmentService {
      * @param currentUserId ID пользователя, инициирующего действие.
      * @param assignmentId  ID задания для получения.
      * @return DTO запрашиваемого задания.
+     * @throws EntityNotFoundException если пользователь или задание не найдены.
      */
     public AssignmentResponseDto getAssignmentById(Long currentUserId, Long assignmentId) {
         // Проверяем, что пользователь существует (аутентификация)
         userRepository.findById(currentUserId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
 
-        Assignment assignment = assignmentRepository.findById(assignmentId)
+        // Используем метод с JOIN FETCH
+        Assignment assignment = assignmentRepository.findByIdWithTopic(assignmentId)
                 .orElseThrow(() -> new EntityNotFoundException("Assignment not found with id: " + assignmentId));
 
-        return toDto(assignment);
+        return toDto(assignment); // <-- Теперь toDto не вызывает LazyInit
     }
 
     /**
@@ -139,6 +159,7 @@ public class AssignmentService {
      * @param currentUserId ID пользователя, инициирующего действие.
      * @param topicId       ID темы.
      * @return Список DTO заданий.
+     * @throws EntityNotFoundException если пользователь или тема не найдены.
      */
     public List<AssignmentResponseDto> findAssignmentsByTopicId(Long currentUserId, Long topicId) {
         // Проверяем, что пользователь существует (аутентификация)
@@ -149,9 +170,10 @@ public class AssignmentService {
         topicRepository.findById(topicId)
                 .orElseThrow(() -> new EntityNotFoundException("Topic not found with id: " + topicId));
 
-        List<Assignment> assignments = assignmentRepository.findByTopicId(topicId);
+        // Используем метод с JOIN FETCH
+        List<Assignment> assignments = assignmentRepository.findByTopicIdWithTopic(topicId);
         return assignments.stream()
-                .map(this::toDto)
+                .map(this::toDto) // <-- Теперь toDto не вызывает LazyInit для каждого элемента
                 .collect(Collectors.toList());
     }
 
@@ -160,8 +182,9 @@ public class AssignmentService {
 
     /**
      * Преобразует сущность Assignment в AssignmentResponseDto.
+     * Включает ID, заголовок, описание, содержимое, тип, тип контента, дедлайн, ID темы и даты создания/обновления.
      *
-     * @param assignment Сущность задания.
+     * @param assignment Сущность задания для преобразования.
      * @return DTO задания.
      */
     private AssignmentResponseDto toDto(Assignment assignment) {
@@ -173,13 +196,12 @@ public class AssignmentService {
         dto.setType(assignment.getType() != null ? assignment.getType().name() : null); // Преобразуем enum в строку
         dto.setContentType(assignment.getContentType() != null ? assignment.getContentType().name() : null); // Преобразуем enum в строку
         dto.setDeadline(assignment.getDeadline());
-        // Устанавливаем ID темы, к которой принадлежит задание
+        dto.setCreatedAt(assignment.getCreatedAt());
+        dto.setUpdatedAt(assignment.getUpdatedAt());
+        // Убедитесь, что assignment.getTopic() загружен (JOIN FETCH в репозитории)
         if (assignment.getTopic() != null) {
             dto.setTopicId(assignment.getTopic().getId());
         }
-        // Установите другие поля DTO, если необходимо (например, createdBy, updatedBy)
-        // dto.setCreatedBy(assignment.getCreatedBy());
-        // dto.setUpdatedBy(assignment.getUpdatedBy());
         return dto;
     }
 
@@ -188,12 +210,14 @@ public class AssignmentService {
      * Выбрасывает ForbiddenException, если у пользователя недостаточно прав.
      *
      * @param userId ID пользователя для проверки.
+     * @throws EntityNotFoundException если пользователь не найден.
+     * @throws ForbiddenException      если доступ запрещен.
      */
     private void validateUserCanEditAssignments(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
 
-        if (user.getRole() != Role.OWNER && // Убедитесь, что Role существует
+        if (user.getRole() != Role.OWNER &&
                 user.getRole() != Role.ADMIN &&
                 user.getRole() != Role.TEACHER) {
             throw new ForbiddenException("Only OWNER, ADMIN, or TEACHER can edit assignments");

@@ -1,6 +1,7 @@
 package com.sstu.LearningManagementSystem.service;
 
 import com.sstu.LearningManagementSystem.ForbiddenException;
+import com.sstu.LearningManagementSystem.model.Course;
 import com.sstu.LearningManagementSystem.model.Report;
 import com.sstu.LearningManagementSystem.model.User;
 import com.sstu.LearningManagementSystem.model.dto.reportDto.ReportResponseDto;
@@ -18,6 +19,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * Сервис для управления отчетами (Report).
+ * Обеспечивает создание, обновление, получение и удаление отчетов о прогрессе пользователей по курсам.
+ * Проверяет права доступа к отчетам.
+ */
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -28,27 +34,15 @@ public class ReportService {
     private final EnrollmentRepository enrollmentRepository; // Для получения прогресса из Enrollment
     private final CourseRepository courseRepository;
 
-    // Метод для обновления отчета на основе данных из Enrollment
-    // Этот метод будет вызываться из EnrollmentService при обновлении прогресса
-    @Transactional
-    public void updateReportForEnrollment(Long enrollmentId) {
-        // Найти Enrollment по ID (предполагается, что он содержит актуальный progress)
-        // В реальности EnrollmentService передаст userId, courseId, и новый progress
-        // Для простоты, представим, что у нас есть метод получения прогресса из EnrollmentService
-        // ReportService может зависеть от EnrollmentService или использовать EnrollmentRepository напрямую
-        // В этом примере используем EnrollmentRepository напрямую, если ReportService сам обновляет.
-
-        // Предположим, что мы получили userId, courseId, и новый progress из Enrollment
-        // (Это может быть передано как параметр или извлечено из EnrollmentRepository)
-        // Long userId = ...;
-        // Long courseId = ...;
-        // Integer newProgress = ...; // из Enrollment
-
-        // Этот метод будет вызываться из EnrollmentService.updateProgressForEnrollment
-        // Поэтому он получит userId, courseId, и progress как параметры
-    }
-
-    // Более реалистичный метод обновления отчета
+    /**
+     * Обновляет или создает отчет о прогрессе пользователя по курсу.
+     * Если отчета нет, создает новый. Если есть - обновляет прогресс и количество выполненных заданий.
+     *
+     * @param userId                  ID пользователя, чей отчет обновляется.
+     * @param courseId                ID курса, по которому обновляется отчет.
+     * @param newProgress             Новый прогресс (в процентах или числовом значении).
+     * @param newCompletedAssignments Новое количество выполненных заданий.
+     */
     @Transactional
     public void updateReport(Long userId, Long courseId, Integer newProgress, Integer newCompletedAssignments) {
         // Найти существующий отчет
@@ -78,36 +72,60 @@ public class ReportService {
      * @param currentUserId ID пользователя, запрашивающего отчет.
      * @param reportId      ID отчета.
      * @return DTO отчета.
+     * @throws EntityNotFoundException если отчет не найден.
+     * @throws ForbiddenException      если доступ запрещен.
      */
     public ReportResponseDto getReportById(Long currentUserId, Long reportId) {
-        Report report = reportRepository.findById(reportId)
+        // Используем метод с JOIN FETCH
+        Report report = reportRepository.findByIdWithUserAndCourse(reportId)
                 .orElseThrow(() -> new EntityNotFoundException("Report not found with id: " + reportId));
 
         // Проверить права доступа: текущий пользователь == владелец отчета ИЛИ преподаватель/админ
         validateAccessToReport(currentUserId, report.getUser().getId());
 
-        return toDto(report);
+        return toDto(report); // <-- Теперь toDto не вызывает LazyInit
     }
 
     /**
      * Получить отчет пользователя по ID курса.
+     * Если отчета нет, создает новый с нулевым прогрессом и сохраняет его.
      *
      * @param currentUserId ID пользователя, запрашивающего отчет.
      * @param courseId      ID курса.
      * @return DTO отчета.
+     * @throws EntityNotFoundException если пользователь или курс не найдены.
+     * @throws ForbiddenException      если доступ запрещен.
      */
+    @Transactional // @Transactional нужен, так как метод может создать и сохранить отчет
     public ReportResponseDto getReportByUserAndCourseId(Long currentUserId, Long courseId) {
         // Проверить, существует ли пользователь (аутентификация)
-        userRepository.findById(currentUserId)
+        User user = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
 
-        Report report = reportRepository.findByUserIdAndCourseId(currentUserId, courseId)
-                .orElseThrow(() -> new EntityNotFoundException("Report not found for user id: " + currentUserId + " and course id: " + courseId));
+        Course course = courseRepository.findById(courseId)
+                .orElseThrow(() -> new EntityNotFoundException("Course not found"));
+
+        // Используем метод с JOIN FETCH, если отчет найден
+        Report report = reportRepository.findByUserIdAndCourseIdWithUserAndCourse(currentUserId, courseId).orElse(null);
+
+        if (report == null) {
+            // Если отчета нет, создаем новый
+            report = Report.builder()
+                    .user(user)
+                    .course(course)
+                    .progress(0.0) // Начальный прогресс
+                    .completedAssignments(0) // Начальное количество выполненных заданий
+                    .build();
+            // Сохраняем новый отчет в БД
+            report = reportRepository.save(report);
+            // report уже содержит User и Course, так как они были загружены при создании или через builder
+        }
+        // Если report != null, он уже содержит User и Course благодаря JOIN FETCH
 
         // Проверить права доступа: текущий пользователь == владелец отчета ИЛИ преподаватель/админ
         validateAccessToReport(currentUserId, report.getUser().getId());
 
-        return toDto(report);
+        return toDto(report); // <-- Теперь toDto не вызывает LazyInit
     }
 
     /**
@@ -115,14 +133,16 @@ public class ReportService {
      *
      * @param currentUserId ID пользователя, запрашивающего список.
      * @return Список DTO отчетов.
+     * @throws ForbiddenException если доступ запрещен.
      */
     public List<ReportResponseDto> getReportsByUserId(Long currentUserId) {
         // Проверить права: currentUserId == запрашиваемый пользователь ИЛИ преподаватель/админ
         validateAccessToList(currentUserId);
 
-        List<Report> reports = reportRepository.findByUserId(currentUserId);
+        // Используем метод с JOIN FETCH
+        List<Report> reports = reportRepository.findByUserIdWithUserAndCourse(currentUserId);
         return reports.stream()
-                .map(this::toDto)
+                .map(this::toDto) // <-- Теперь toDto не вызывает LazyInit для каждого элемента
                 .collect(Collectors.toList());
     }
 
@@ -133,27 +153,37 @@ public class ReportService {
      * @param currentUserId ID пользователя, запрашивающего список.
      * @param courseId      ID курса.
      * @return Список DTO отчетов.
+     * @throws ForbiddenException если доступ запрещен.
      */
     public List<ReportResponseDto> getReportsByCourseId(Long currentUserId, Long courseId) {
         // Проверить права: currentUserId должен быть преподавателем/админом/владельцем курса
         validateUserCanViewReports(currentUserId, courseId);
 
-        List<Report> reports = reportRepository.findByCourseId(courseId);
+        // Используем метод с JOIN FETCH
+        List<Report> reports = reportRepository.findByCourseIdWithUserAndCourse(courseId);
         return reports.stream()
-                .map(this::toDto)
+                .map(this::toDto) // <-- Теперь toDto не вызывает LazyInit для каждого элемента
                 .collect(Collectors.toList());
     }
 
     // --- Вспомогательные методы ---
 
+    /**
+     * Преобразует сущность Report в ReportResponseDto.
+     *
+     * @param report Сущность отчета для преобразования.
+     * @return DTO отчета.
+     */
     private ReportResponseDto toDto(Report report) {
         ReportResponseDto dto = new ReportResponseDto();
         dto.setId(report.getId());
+        // Убедитесь, что report.getUser() и report.getCourse() загружены (JOIN FETCH в репозитории)
         dto.setUserId(report.getUser().getId());
         dto.setCourseId(report.getCourse().getId());
         dto.setProgress(report.getProgress());
         dto.setCompletedAssignments(report.getCompletedAssignments());
-        // dto.setDeletedAt(report.getDeletedAt()); // Включить, если используется soft-delete
+        dto.setCreatedAt(report.getCreatedAt());
+        dto.setUpdatedAt(report.getUpdatedAt());
         return dto;
     }
 
@@ -163,6 +193,8 @@ public class ReportService {
      *
      * @param requestUserId ID пользователя, делающего запрос.
      * @param ownerUserId   ID владельца отчета.
+     * @throws EntityNotFoundException если пользователь не найден.
+     * @throws ForbiddenException      если доступ запрещен.
      */
     private void validateAccessToReport(Long requestUserId, Long ownerUserId) {
         User requestingUser = userRepository.findById(requestUserId)
@@ -174,7 +206,7 @@ public class ReportService {
         }
 
         // Или пользователь должен быть преподавателем/админом/владельцем
-        if (requestingUser.getRole() != Role.OWNER && // Убедитесь, что Role существует
+        if (requestingUser.getRole() != Role.OWNER &&
                 requestingUser.getRole() != Role.ADMIN &&
                 requestingUser.getRole() != Role.TEACHER) {
             throw new ForbiddenException("Access denied: Cannot view another user's report.");
@@ -186,6 +218,7 @@ public class ReportService {
      * Вызывает ForbiddenException, если прав недостаточно.
      *
      * @param requestUserId ID пользователя, делающего запрос.
+     * @throws EntityNotFoundException если пользователь не найден.
      */
     private void validateAccessToList(Long requestUserId) {
         // Пользователь может просматривать только свой список
@@ -201,6 +234,8 @@ public class ReportService {
      *
      * @param userId   ID пользователя.
      * @param courseId ID курса.
+     * @throws EntityNotFoundException если пользователь не найден.
+     * @throws ForbiddenException      если доступ запрещен.
      */
     private void validateUserCanViewReports(Long userId, Long courseId) {
         // Получить курс и связанный с ним пользователь

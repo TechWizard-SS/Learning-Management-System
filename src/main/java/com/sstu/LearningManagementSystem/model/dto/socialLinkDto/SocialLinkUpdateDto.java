@@ -12,5 +12,4 @@ import lombok.Setter;
 public class SocialLinkUpdateDto {
     private String platform; // Новая платформа
     private String url;      // Новый URL
-    // Обновление, скорее всего, будет происходить для конкретной ссылки по её ID
 }

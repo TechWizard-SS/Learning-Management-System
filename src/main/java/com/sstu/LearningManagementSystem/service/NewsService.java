@@ -20,6 +20,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * Сервис для управления новостями (News).
+ * Обеспечивает создание, обновление, получение и удаление новостей, связанных с курсами.
+ * Проверяет права доступа к новостям (только преподаватель/админ/владелец могут редактировать).
+ */
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -30,12 +35,14 @@ public class NewsService {
     private final UserRepository userRepository; // Для проверки существования пользователя
 
     /**
-     * Создает новую новость.
+     * Создает новую новость для курса.
      * Требует проверки прав (например, только TEACHER, ADMIN, OWNER).
      *
      * @param currentUserId ID пользователя, инициирующего создание.
      * @param createDto DTO с данными для создания новости.
      * @return DTO созданной новости.
+     * @throws EntityNotFoundException если курс не найден.
+     * @throws ForbiddenException      если у пользователя недостаточно прав.
      */
     @Transactional
     public NewsResponseDto createNews(Long currentUserId, NewsCreateDto createDto) {
@@ -53,7 +60,12 @@ public class NewsService {
                 .build();
 
         News savedNews = newsRepository.save(news);
-        return toDto(savedNews);
+
+        // Перезапрашиваем News с Course, чтобы избежать LazyInit в toDto
+        News savedWithCourse = newsRepository.findByIdWithCourse(savedNews.getId())
+                .orElseThrow(() -> new EntityNotFoundException("News not found after creation")); // На всякий случай
+
+        return toDto(savedWithCourse); // <-- Теперь toDto не вызывает LazyInit
     }
 
     /**
@@ -64,12 +76,14 @@ public class NewsService {
      * @param newsId        ID новости для обновления.
      * @param updateDto     DTO с новыми данными.
      * @return DTO обновленной новости.
+     * @throws EntityNotFoundException если новость не найдена.
+     * @throws ForbiddenException      если у пользователя недостаточно прав.
      */
     @Transactional
     public NewsResponseDto updateNews(Long currentUserId, Long newsId, NewsUpdateDto updateDto) {
         validateUserCanEditNews(currentUserId); // Проверка прав
 
-        News news = newsRepository.findById(newsId)
+        News news = newsRepository.findByIdWithCourse(newsId) // <-- Изменено: используем JOIN FETCH
                 .orElseThrow(() -> new EntityNotFoundException("News not found with id: " + newsId));
 
         // Частичное обновление: обновляем только ненулевые поля из DTO
@@ -78,7 +92,12 @@ public class NewsService {
         if (updateDto.getTags() != null) news.setTags(updateDto.getTags()); // Полное обновление тегов
 
         News updatedNews = newsRepository.save(news);
-        return toDto(updatedNews);
+
+        // Перезапрашиваем обновленный News с Course, чтобы избежать LazyInit в toDto
+        News updatedWithCourse = newsRepository.findByIdWithCourse(updatedNews.getId()) // <-- Добавлено
+                .orElseThrow(() -> new EntityNotFoundException("News not found after update")); // На всякий случай
+
+        return toDto(updatedWithCourse); // <-- Теперь toDto не вызывает LazyInit
     }
 
     /**
@@ -87,6 +106,8 @@ public class NewsService {
      *
      * @param currentUserId ID пользователя, инициирующего удаление.
      * @param newsId        ID новости для удаления.
+     * @throws EntityNotFoundException если новость не найдена.
+     * @throws ForbiddenException      если у пользователя недостаточно прав.
      */
     @Transactional
     public void deleteNews(Long currentUserId, Long newsId) {
@@ -108,16 +129,18 @@ public class NewsService {
      * @param currentUserId ID пользователя, инициирующего получение.
      * @param newsId        ID новости для получения.
      * @return DTO запрашиваемой новости.
+     * @throws EntityNotFoundException если пользователь или новость не найдены.
      */
     public NewsResponseDto getNewsById(Long currentUserId, Long newsId) {
         // Проверяем, что пользователь существует (аутентификация)
         userRepository.findById(currentUserId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
 
-        News news = newsRepository.findById(newsId)
+        // Используем метод с JOIN FETCH
+        News news = newsRepository.findByIdWithCourse(newsId)
                 .orElseThrow(() -> new EntityNotFoundException("News not found with id: " + newsId));
 
-        return toDto(news);
+        return toDto(news); // <-- Теперь toDto не вызывает LazyInit
     }
 
     /**
@@ -126,6 +149,7 @@ public class NewsService {
      * @param currentUserId ID пользователя, инициирующего получение.
      * @param courseId      ID курса.
      * @return Список DTO новостей.
+     * @throws EntityNotFoundException если пользователь или курс не найдены.
      */
     public List<NewsResponseDto> getNewsByCourseId(Long currentUserId, Long courseId) {
         // Проверяем, что пользователь существует (аутентификация)
@@ -136,9 +160,10 @@ public class NewsService {
         courseRepository.findById(courseId)
                 .orElseThrow(() -> new EntityNotFoundException("Course not found with id: " + courseId));
 
-        List<News> newsList = newsRepository.findByCourseId(courseId);
+        // Используем метод с JOIN FETCH
+        List<News> newsList = newsRepository.findByCourseIdWithCourse(courseId);
         return newsList.stream()
-                .map(this::toDto)
+                .map(this::toDto) // <-- Теперь toDto не вызывает LazyInit для каждого элемента
                 .collect(Collectors.toList());
     }
 
@@ -146,8 +171,9 @@ public class NewsService {
 
     /**
      * Преобразует сущность News в NewsResponseDto.
+     * Включает ID, заголовок, текст, рейтинг, теги, ID курса и даты создания/обновления.
      *
-     * @param news Сущность новости.
+     * @param news Сущность новости для преобразования.
      * @return DTO новости.
      */
     private NewsResponseDto toDto(News news) {
@@ -157,7 +183,10 @@ public class NewsService {
         dto.setText(news.getText());
         dto.setRating(news.getRating());
         dto.setTags(news.getTags());
+        // Убедитесь, что news.getCourse() загружен (JOIN FETCH в репозитории)
         dto.setCourseId(news.getCourse().getId());
+        dto.setCreatedAt(news.getCreatedAt());
+        dto.setUpdatedAt(news.getUpdatedAt());
         return dto;
     }
 
@@ -166,12 +195,14 @@ public class NewsService {
      * Выбрасывает ForbiddenException, если у пользователя недостаточно прав.
      *
      * @param userId ID пользователя для проверки.
+     * @throws EntityNotFoundException если пользователь не найден.
+     * @throws ForbiddenException      если доступ запрещен.
      */
     private void validateUserCanEditNews(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
 
-        if (user.getRole() != Role.OWNER && // Убедитесь, что Role существует
+        if (user.getRole() != Role.OWNER &&
                 user.getRole() != Role.ADMIN &&
                 user.getRole() != Role.TEACHER) {
             throw new ForbiddenException("Only OWNER, ADMIN, or TEACHER can edit news");

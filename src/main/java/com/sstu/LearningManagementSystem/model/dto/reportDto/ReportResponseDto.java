@@ -19,5 +19,4 @@ public class ReportResponseDto {
     private Integer completedAssignments; // Количество выполненных заданий
     private LocalDateTime createdAt; // Дата создания отчета (из Auditable)
     private LocalDateTime updatedAt; // Дата последнего обновления отчета (из Auditable)
-    // private LocalDateTime deletedAt; // Если используется soft-delete (из Auditable)
 }
