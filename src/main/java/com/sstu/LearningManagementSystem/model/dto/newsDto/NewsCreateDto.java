@@ -16,6 +16,4 @@ public class NewsCreateDto {
     private String text;  // Текст новости
     private List<String> tags; // Теги
     private Long courseId; // ID курса, к которому относится новость
-
-    // Не включаем rating, createdBy, createdAt - они устанавливаются сервисом/аудитом
 }

@@ -16,21 +16,19 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/assignments") // Базовый URL
+@RequestMapping("/api/assignments")
 @RequiredArgsConstructor
 public class AssignmentController {
 
     private final AssignmentService assignmentService;
-    private final UserService userService; // Для получения currentUserId по username
+    private final UserService userService;
 
-    // Вспомогательный метод для получения ID текущего пользователя
     private Long getCurrentUserId() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
             throw new RuntimeException("User not authenticated");
         }
         String username = auth.getName();
-        // Предполагается, что у вас есть метод в UserService, возвращающий User по username
         User user = userService.findByUsername(username);
         return user.getId();
     }

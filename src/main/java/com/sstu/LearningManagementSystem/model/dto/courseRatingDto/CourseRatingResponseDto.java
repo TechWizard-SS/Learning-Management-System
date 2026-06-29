@@ -18,5 +18,4 @@ public class CourseRatingResponseDto {
     private Integer rating; // Оценка
     private LocalDateTime createdAt; // Дата создания оценки (из Auditable)
     private LocalDateTime updatedAt; // Дата последнего обновления оценки (из Auditable)
-    // private LocalDateTime deletedAt; // Если используется soft-delete (из Auditable)
 }

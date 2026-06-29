@@ -21,5 +21,4 @@ public class AssignmentSubmissionResponseDto {
     private String answer; // Текст ответа
     private LocalDateTime createdAt; // Дата создания сабмита
     private LocalDateTime updatedAt; // Дата последнего обновления
-    // private LocalDateTime submittedAt; // Возможное поле для даты конкретной отправки попытки?
 }

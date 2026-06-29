@@ -10,9 +10,5 @@ import java.util.Optional;
 @Repository
 public interface AchievementRepository extends JpaRepository<Achievement, Long> {
 
-    // Найти достижение по названию (уникально)
     Optional<Achievement> findByTitle(String title);
-
-    // (Опционально) Найти все достижения по части названия
-    // List<Achievement> findByTitleContainingIgnoreCase(String titleFragment);
 }

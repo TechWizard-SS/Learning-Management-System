@@ -20,8 +20,8 @@ spring.security.jwt.expiration=86400000
 
 spring.mail.host=sandbox.smtp.mailtrap.io
 spring.mail.port=2525
-spring.mail.username={...}
-spring.mail.password={...}
+spring.mail.username=6d661b55961684
+spring.mail.password=cc7311afe7b6c4
 spring.mail.properties.mail.smtp.auth=true
 spring.mail.properties.mail.smtp.starttls.enable=true
 spring.mail.properties.mail.smtp.starttls.required=true

@@ -13,6 +13,7 @@ import com.sstu.LearningManagementSystem.repository.TopicRepository;
 import com.sstu.LearningManagementSystem.repository.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 /**
@@ -96,6 +97,7 @@ public class TopicService {
      * @return DTO запрашиваемой темы.
      * @throws EntityNotFoundException если пользователь или тема не найдены.
      */
+    //@Cacheable(value = "topics", key = "#topicId")
     public TopicResponseDto getTopicById(Long currentUserId, Long topicId) {
         userRepository.findById(currentUserId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));

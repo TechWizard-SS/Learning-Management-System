@@ -17,10 +17,10 @@ import java.util.Collections;
  * Проверяет статус верификации email перед предоставлением доступа.
  */
 @Service
-@RequiredArgsConstructor // Убедитесь, что Lombok генерирует конструктор
+@RequiredArgsConstructor
 public class MyUserDetailsService implements UserDetailsService {
 
-    private final UserRepository userRepository; // Должно быть final
+    private final UserRepository userRepository;
 
     @Override
     /**
@@ -35,13 +35,13 @@ public class MyUserDetailsService implements UserDetailsService {
         User u = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
 
-        if (!u.isVerified()) { // <-- Эта проверка должна быть
+        if (!u.isVerified()) {
             throw new UsernameNotFoundException("Email not verified");
         }
 
         return new org.springframework.security.core.userdetails.User(
                 u.getUsername(),
-                u.getPassword(), // <-- Тут вызывается getPassword()
+                u.getPassword(),
                 Collections.singleton(new SimpleGrantedAuthority("ROLE_" + u.getRole().name()))
         );
     }

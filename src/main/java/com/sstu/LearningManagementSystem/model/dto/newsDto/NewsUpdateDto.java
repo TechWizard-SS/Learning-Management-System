@@ -15,5 +15,4 @@ public class NewsUpdateDto {
     private String title; // Новое название
     private String text;  // Новый текст
     private List<String> tags; // Новые теги
-    // Не включаем rating, courseId - они, скорее всего, не изменяются или изменяются отдельно
 }

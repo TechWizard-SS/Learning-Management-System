@@ -31,5 +31,5 @@ public class VerificationToken {
     private User user;
 
     @Column(nullable = false)
-    private LocalDateTime expiryDate;  // now + 2h
+    private LocalDateTime expiryDate;
 }

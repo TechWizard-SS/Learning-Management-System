@@ -16,21 +16,18 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/social-links") // Базовый URL
+@RequestMapping("/api/social-links")
 @RequiredArgsConstructor
 public class SocialLinkController {
 
     private final SocialLinkService socialLinkService;
-    private final UserService userService; // Для получения currentUserId по username
-
-    // Вспомогательный метод для получения ID текущего пользователя
+    private final UserService userService;
     private Long getCurrentUserId() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
             throw new RuntimeException("User not authenticated");
         }
         String username = auth.getName();
-        // Предполагается, что у вас есть метод в UserService, возвращающий User по username
         User user = userService.findByUsername(username);
         return user.getId();
     }

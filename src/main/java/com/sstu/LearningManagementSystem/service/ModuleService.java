@@ -13,6 +13,7 @@ import com.sstu.LearningManagementSystem.repository.ModuleRepository;
 import com.sstu.LearningManagementSystem.repository.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import com.sstu.LearningManagementSystem.model.Module;
 
@@ -123,6 +124,7 @@ public class ModuleService {
      * @return DTO запрашиваемого модуля.
      * @throws EntityNotFoundException если пользователь или модуль не найдены.
      */
+    //@Cacheable(value = "modules", key = "#moduleId")
     public ModuleResponseDto getModuleById(Long currentUserId, Long moduleId) {
         userRepository.findById(currentUserId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));

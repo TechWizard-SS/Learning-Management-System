@@ -11,14 +11,10 @@ import java.util.Optional;
 
 @Repository
 public interface VerificationTokenRepository extends JpaRepository<VerificationToken, Long> {
-    // Старый метод
-    // Optional<VerificationToken> findByToken(String token);
 
-    // Новый метод с JOIN FETCH для одного токена
     @Query("SELECT vt FROM VerificationToken vt JOIN FETCH vt.user WHERE vt.token = :token")
     Optional<VerificationToken> findByTokenWithUser(@Param("token") String token);
 
-    // Метод для списка (для планировщика)
     @Query("SELECT vt FROM VerificationToken vt JOIN FETCH vt.user WHERE vt.expiryDate < :now")
     List<VerificationToken> findAllByExpiryDateBeforeWithUser(@Param("now") LocalDateTime now);
 

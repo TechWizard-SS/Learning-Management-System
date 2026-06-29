@@ -5,13 +5,14 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.io.Serializable;
 import java.time.LocalDateTime;
 
 @AllArgsConstructor
 @NoArgsConstructor
 @Setter
 @Getter
-public class AssignmentResponseDto {
+public class AssignmentResponseDto implements Serializable {
     private Long id; // Use Long for ID
     private String title;
     private String description;

@@ -41,11 +41,11 @@ public class Assignment extends Auditable {
     private Topic topic;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "content_type") // Optional: specify DB column name
-    private ContentType contentType; // Ensure this enum exists (TEXT, VIDEO, DOCUMENT, AUDIO, etc.)
+    @Column(name = "content_type")
+    private ContentType contentType;
 
-    @Column(name = "deadline") // Optional: specify DB column name
-    private LocalDateTime deadline; // Optional: add deadline field
+    @Column(name = "deadline")
+    private LocalDateTime deadline;
 
     @OneToMany(mappedBy = "assignment", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<AssignmentSubmission> submissions = new ArrayList<>();

@@ -19,30 +19,28 @@ import org.springframework.web.bind.annotation.*;
 public class ModuleController {
 
     private final ModuleService moduleService;
-    private final UserService userService; // Для получения currentUserId по username
+    private final UserService userService;
 
-    // Вспомогательный метод для получения ID текущего пользователя
     private Long getCurrentUserId() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
             throw new RuntimeException("User not authenticated");
         }
         String username = auth.getName();
-        // Предполагается, что у вас есть метод в UserService, возвращающий User по username
         User user = userService.findByUsername(username);
         return user.getId();
     }
 
     @PostMapping
     public ResponseEntity<ModuleResponseDto> createModule(@Valid @RequestBody ModuleCreateDto createDto) {
-        Long currentUserId = getCurrentUserId(); // Получаем из SecurityContext
+        Long currentUserId = getCurrentUserId();
         ModuleResponseDto createdModule = moduleService.createModule(currentUserId, createDto);
         return ResponseEntity.ok(createdModule);
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<ModuleResponseDto> getModuleById(@PathVariable Long id) {
-        Long currentUserId = getCurrentUserId(); // Получаем из SecurityContext
+        Long currentUserId = getCurrentUserId();
         ModuleResponseDto module = moduleService.getModuleById(currentUserId, id);
         return ResponseEntity.ok(module);
     }
@@ -51,14 +49,14 @@ public class ModuleController {
     public ResponseEntity<ModuleResponseDto> updateModule(
             @PathVariable Long id,
             @Valid @RequestBody ModuleUpdateDto updateDto) {
-        Long currentUserId = getCurrentUserId(); // Получаем из SecurityContext
+        Long currentUserId = getCurrentUserId();
         ModuleResponseDto updatedModule = moduleService.updateModule(currentUserId, id, updateDto);
         return ResponseEntity.ok(updatedModule);
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteModule(@PathVariable Long id) {
-        Long currentUserId = getCurrentUserId(); // Получаем из SecurityContext
+        Long currentUserId = getCurrentUserId();
         moduleService.deleteModule(currentUserId, id);
         return ResponseEntity.noContent().build();
     }

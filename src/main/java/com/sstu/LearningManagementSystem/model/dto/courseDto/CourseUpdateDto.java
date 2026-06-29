@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -12,7 +13,7 @@ import java.util.List;
 @NoArgsConstructor
 @Setter
 @Getter
-public class CourseUpdateDto {
+public class CourseUpdateDto implements Serializable {
     private String name;
     private String description;
     private Integer expectedDuration;

@@ -16,12 +16,12 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/achievements") // Базовый URL
+@RequestMapping("/api/achievements")
 @RequiredArgsConstructor
 public class AchievementController {
 
     private final AchievementService achievementService;
-    private final UserService userService; // Для получения currentUserId по username
+    private final UserService userService;
 
     // Вспомогательный метод для получения ID текущего пользователя
     private Long getCurrentUserId() {
@@ -30,7 +30,6 @@ public class AchievementController {
             throw new RuntimeException("User not authenticated");
         }
         String username = auth.getName();
-        // Предполагается, что у вас есть метод в UserService, возвращающий User по username
         User user = userService.findByUsername(username);
         return user.getId();
     }
@@ -108,8 +107,4 @@ public class AchievementController {
         List<AchievementResponseDto> achievements = achievementService.getAllAchievements(currentUserId);
         return ResponseEntity.ok(achievements);
     }
-    // Примечание: Управление привязкой достижений к пользователям (например, добавление пользователю)
-    // обычно происходит внутри других сервисов (UserService, CourseService и т.д.) при выполнении условий.
-    // Через API может быть отдельный endpoint для получения *достижений конкретного пользователя*,
-    // но это требует связи Achievement <-> User, например, в UserService или отдельном контроллере.
 }

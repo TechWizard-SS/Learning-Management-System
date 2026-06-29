@@ -15,7 +15,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class EmailService {
 
-    private final JavaMailSender mailSender; // <-- Это бин, предоставляемый spring-boot-starter-mail
+    private final JavaMailSender mailSender;
 
     /**
      * Отправляет письмо с ссылкой для подтверждения регистрации.
@@ -29,7 +29,7 @@ public class EmailService {
         message.setSubject("Подтверждение регистрации в LMS");
         message.setText("Для подтверждения перейдите по ссылке: http://localhost:7070/api/auth/verify?token=" + token +
                 "\nСсылка действительна 2 часа.");
-        mailSender.send(message); // <-- Это вызывает Spring Mail с настройками из application.properties
+        mailSender.send(message);
     }
 
     /**

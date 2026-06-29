@@ -12,7 +12,4 @@ import lombok.Setter;
 public class SocialLinkCreateDto {
     private String platform; // Платформа (например, "Twitter", "LinkedIn")
     private String url;      // URL ссылки
-
-    // Не включаем userId - он берется из аутентифицированного пользователя (currentUserId)
-    // Не включаем createdBy, createdAt - устанавливаются сервисом/аудитом
 }

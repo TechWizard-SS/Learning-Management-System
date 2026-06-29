@@ -32,17 +32,14 @@ public class TokenCleanupScheduler {
     @Scheduled(cron = "0 0 * * * ?")  // Hourly
     @Transactional  // Add for atomic deletes
     public void cleanupExpiredTokens() {
-        // Verification
         List<VerificationToken> expiredVt = vtRepo.findAllByExpiryDateBeforeWithUser(LocalDateTime.now());
         for (VerificationToken vt : expiredVt) {
             userRepo.delete(vt.getUser());
             vtRepo.delete(vt);
         }
 
-        // Reset (add this)
         List<ResetToken> expiredRt = resetTokenRepository.findAllByExpiryDateBeforeWithUser(LocalDateTime.now());
         for (ResetToken rt : expiredRt) {
-            // No delete user for reset, just token
             resetTokenRepository.delete(rt);
         }
     }

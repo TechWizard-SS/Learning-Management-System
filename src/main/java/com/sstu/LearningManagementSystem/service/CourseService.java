@@ -13,17 +13,25 @@ import com.sstu.LearningManagementSystem.repository.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 //import org.springframework.security.access.AccessDeniedException;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class CourseService {
     private final CourseRepository courseRepository;
     private final CourseCategoryRepository categoryRepository;
     private final UserRepository userRepository;
+    private final CourseCacheService courseCacheService;
+    private final Map<Long, AtomicInteger> hits = new ConcurrentHashMap<>();
 
     public CourseResponseDto createCourse(Long currentUserId, CourseCreateDto createDto) {
         // Получаем текущего пользователя
@@ -55,16 +63,45 @@ public class CourseService {
         return mapToResponseDto(savedCourse);
     }
 
+//    @Cacheable(value = "courses", key = "#courseId")
+//    public CourseResponseDto getCourseById(Long currentUserId, Long courseId) {
+//        // Проверяем, что пользователь существует (аутентификация)
+//        userRepository.findById(currentUserId)
+//                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+//
+//        log.info("Fetching course {} from DB", courseId);
+//
+//        // Используем метод с JOIN FETCH
+//        Course course = courseRepository.findByIdWithCategoryAndTags(courseId)
+//                .orElseThrow(() -> new EntityNotFoundException("Course not found"));
+//
+//
+//        return toDto(course); // Теперь toDto не вызывает LazyInit
+//    }
+
     public CourseResponseDto getCourseById(Long currentUserId, Long courseId) {
-        // Проверяем, что пользователь существует (аутентификация)
+        // Проверка пользователя
         userRepository.findById(currentUserId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
 
-        // Используем метод с JOIN FETCH
+        if (isTopCourse(courseId)) {
+            return courseCacheService.getCourseCached(courseId); // ✅ proxy
+        }
+
+        // Не топ → всегда БД
+        log.info("Fetching NON-TOP course {} from DB", courseId);
+
         Course course = courseRepository.findByIdWithCategoryAndTags(courseId)
                 .orElseThrow(() -> new EntityNotFoundException("Course not found"));
 
-        return toDto(course); // Теперь toDto не вызывает LazyInit
+        return toDto(course);
+    }
+
+    private boolean isTopCourse(Long courseId) {
+        hits.computeIfAbsent(courseId, id -> new AtomicInteger())
+                .incrementAndGet();
+
+        return hits.get(courseId).get() >= 100;
     }
 
     public CourseResponseDto updateCourse(Long currentUserId, Long courseId, CourseUpdateDto updateDto) {

@@ -68,8 +68,8 @@ public class SecurityConfig {
         http.csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(authz -> authz
                         .requestMatchers("/api/auth/register", "/api/auth/authenticate", "/api/auth/verify", "/api/auth/forgot").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/auth/reset").permitAll() // <-- Разрешить GET
-                        .requestMatchers(HttpMethod.POST, "/api/auth/reset").permitAll() // <-- Разрешить POST
+                        .requestMatchers(HttpMethod.GET, "/api/auth/reset").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/reset").permitAll()
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(exception -> exception.authenticationEntryPoint(jwtAuthenticationEntryPoint))

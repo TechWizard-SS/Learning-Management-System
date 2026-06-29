@@ -16,5 +16,5 @@ public class ModuleCreateDto {
     private String title;
     private String description;
     @NotNull
-    private Long courseId; // Link to Course
+    private Long courseId;
 }

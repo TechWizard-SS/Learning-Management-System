@@ -31,5 +31,5 @@ public class ResetToken {
     private User user;
 
     @Column(nullable = false)
-    private LocalDateTime expiryDate = LocalDateTime.now();  // now + 1h или 24h, по ТЗ не уточнено, сделай 1h
+    private LocalDateTime expiryDate = LocalDateTime.now();
 }

@@ -26,7 +26,7 @@ public class JwtUtil {
     private String secretKey;
 
     @Value("${spring.security.jwt.expiration}")
-    private long expiration; // в ms, e.g., 86400000 в properties
+    private long expiration;
 
     /**
      * Извлекает имя пользователя из токена.

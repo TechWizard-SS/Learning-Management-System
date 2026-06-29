@@ -13,21 +13,19 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/reports") // Базовый URL
+@RequestMapping("/api/reports")
 @RequiredArgsConstructor
 public class ReportController {
 
     private final ReportService reportService;
-    private final UserService userService; // Для получения currentUserId по username
+    private final UserService userService;
 
-    // Вспомогательный метод для получения ID текущего пользователя
     private Long getCurrentUserId() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
             throw new RuntimeException("User not authenticated");
         }
         String username = auth.getName();
-        // Предполагается, что у вас есть метод в UserService, возвращающий User по username
         User user = userService.findByUsername(username);
         return user.getId();
     }
@@ -79,7 +77,4 @@ public class ReportController {
         List<ReportResponseDto> reports = reportService.getReportsByCourseId(currentUserId, courseId);
         return ResponseEntity.ok(reports);
     }
-    // Примечание: Методы создания, обновления и удаления Report через API обычно не предоставляются напрямую,
-    // так как отчеты генерируются системой на основе других данных (Enrollment, AssignmentSubmission).
-    // Методы CRUD для Report возможны, если это требование ТЗ для фиксации отчета на определенный момент.
 }

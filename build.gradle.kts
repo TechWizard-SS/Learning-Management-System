@@ -25,6 +25,8 @@ repositories {
 }
 
 dependencies {
+	implementation ("org.springframework.boot:spring-boot-starter-data-redis")
+	implementation ("io.lettuce:lettuce-core")
 	implementation("org.springframework.boot:spring-boot-starter-mail")
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
 	implementation("org.springframework.boot:spring-boot-starter-security")

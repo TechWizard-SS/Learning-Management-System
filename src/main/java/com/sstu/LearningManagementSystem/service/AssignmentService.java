@@ -15,6 +15,7 @@ import com.sstu.LearningManagementSystem.repository.TopicRepository;
 import com.sstu.LearningManagementSystem.repository.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -141,6 +142,7 @@ public class AssignmentService {
      * @return DTO запрашиваемого задания.
      * @throws EntityNotFoundException если пользователь или задание не найдены.
      */
+    //@Cacheable(value = "assignments", key = "#assignmentId")
     public AssignmentResponseDto getAssignmentById(Long currentUserId, Long assignmentId) {
         // Проверяем, что пользователь существует (аутентификация)
         userRepository.findById(currentUserId)

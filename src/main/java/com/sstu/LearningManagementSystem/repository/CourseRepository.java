@@ -21,7 +21,6 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     @Query("SELECT c FROM Course c LEFT JOIN FETCH c.category LEFT JOIN FETCH c.tags WHERE c.id = :id")
     Optional<Course> findByIdWithCategoryAndTags(@Param("id") Long id);
 
-    // Или, если нужен список:
     @Query("SELECT c FROM Course c LEFT JOIN FETCH c.category LEFT JOIN FETCH c.tags")
     List<Course> findAllWithCategoryAndTags();
 }
