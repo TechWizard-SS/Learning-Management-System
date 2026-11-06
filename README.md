@@ -1,3 +1,21 @@
+[![Quality gate status](https://sonarcloud.io/api/project_badges/measure?project=TechWizard-SS_hexlet-jdbc&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=TechWizard-SS_hexlet-jdbc)
+
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=TechWizard-SS_hexlet-jdbc&metric=coverage)](https://sonarcloud.io/summary/new_code?id=TechWizard-SS_hexlet-jdbc)
+
+[![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=TechWizard-SS_hexlet-jdbc&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=TechWizard-SS_hexlet-jdbc)
+
+[![Lines of code](https://sonarcloud.io/api/project_badges/measure?project=TechWizard-SS_hexlet-jdbc&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=TechWizard-SS_hexlet-jdbc)
+
+[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=TechWizard-SS_hexlet-jdbc&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=TechWizard-SS_hexlet-jdbc)
+
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=TechWizard-SS_hexlet-jdbc&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=TechWizard-SS_hexlet-jdbc)
+
+[![Maintainability issues](https://sonarcloud.io/api/project_badges/measure?project=TechWizard-SS_hexlet-jdbc&metric=software_quality_maintainability_issues)](https://sonarcloud.io/summary/new_code?id=TechWizard-SS_hexlet-jdbc)
+
+[![Reliability issues](https://sonarcloud.io/api/project_badges/measure?project=TechWizard-SS_hexlet-jdbc&metric=software_quality_reliability_issues)](https://sonarcloud.io/summary/new_code?id=TechWizard-SS_hexlet-jdbc)
+
+[![Security issues](https://sonarcloud.io/api/project_badges/measure?project=TechWizard-SS_hexlet-jdbc&metric=software_quality_security_issues)](https://sonarcloud.io/summary/new_code?id=TechWizard-SS_hexlet-jdbc)
+
 
 # Learning Management System (LMS)
 
